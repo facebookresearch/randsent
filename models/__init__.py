@@ -7,4 +7,4 @@
 
 from .esn import ESN
 from .lstm import RandLSTM
-from .borep import RandProjection
+from .borep import BOREP

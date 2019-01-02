@@ -14,8 +14,7 @@ import torch.nn as nn
 import numpy as np
 
 import utils
-from models import RandProjection, ESN, RandLSTM
-
+from models import BOREP, ESN, RandLSTM
 
 def prepare(params, samples):
     words = set([])
@@ -25,13 +24,13 @@ def prepare(params, samples):
                 words.add(w)
     word2id = {w:i for i, w in enumerate(['<p>'] + list(words))}
     params.word2id = word2id
-    params.lut = utils.load_vecs(params.glove_path, word2id, zero=params.zero)
+    params.lut = utils.load_vecs(params, word2id, zero=params.zero)
     if params.random_word_embeddings:
         utils.init_word_embeds(params.lut, params)
     return params
 
 def batcher(params, batch):
-    global network
+    network = params['network']
     with torch.no_grad():
         vec = network.encode(batch, params)
     return vec
@@ -42,9 +41,9 @@ def get_results(params, seed):
     if params.gpu:
         torch.cuda.manual_seed(seed)
 
-    global network
-    if params.model == "projection":
-        network = RandProjection(params)
+    network = None
+    if params.model == "borep":
+        network = BOREP(params)
     elif params.model == "lstm":
         network = RandLSTM(params)
     elif params.model == "esn":
@@ -52,9 +51,10 @@ def get_results(params, seed):
 
     se = senteval.engine.SE({
         'task_path': os.path.join(params.senteval_path, 'data'),
-        'glove_path': params.glove_path,
+        'word_emb_file': params.word_emb_file, 'word_emb_dim': params.word_emb_dim,
         'usepytorch': True, 'kfold': params.n_folds, 'feat_dim': senteval_feat_dim,
-        'random_word_embeddings': params.random_word_embeddings, 'seed': seed
+        'random_word_embeddings': params.random_word_embeddings, 'seed': seed,
+        'batch_size': params.se_batch_size, 'network': network
     }, batcher, prepare)
 
     if params.task_type == "downstream":
@@ -70,13 +70,13 @@ def consolidate(results, total_results):
     new_r = {}
     for task, result in results.items():
         if 'devacc' in result:
-            dev, test = str(result['devacc']), str(result['acc'])
+            dev, test = result['devacc'], result['acc']
             new_r[task] = (dev, test)
         elif 'devpearson' in result:
-            dev, test = str(result['devpearson']), str(result['pearson'])
-            dev = dev if not np.isnan(float(dev)) else 0.
-            test = test if not np.isnan(float(test)) else 0.
-            new_r[task] = (dev, test)
+            dev, test = result['devpearson'], result['pearson']
+            dev = dev if not np.isnan(dev) else 0.
+            test = test if not np.isnan(test) else 0.
+            new_r[task] = (dev*100, test*100)
     for task in new_r:
         if task not in total_results:
             total_results[task] = []
@@ -87,19 +87,23 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="RandSent - Random Sentence Representations")
 
     parser.add_argument("--model",
-                help="Type of model to use.", default="projection",
-                        choices=["projection", "esn", "lstm"])
+                help="Type of model to use (either borep, esn, or lstm, default borep).",
+                        choices=["borep","esn", "lstm"], default="borep")
     parser.add_argument("--task_type",
-                help="Type of task to try (either downstream or probing).", default="downstream",
-                        choices=["downstream", "probing"])
+                help="Type of task to try (either downstream or probing, default downstream).",
+                        choices=["downstream", "probing"], default="downstream")
     parser.add_argument("--n_folds", type=int,
-                help="Number of folds for cross-validation in SentEval", default=10)
-    parser.add_argument("--gpu", type=int,
-                help="Whether to use GPU.", default=0)
+                help="Number of folds for cross-validation in SentEval (default 10).", default=10)
+    parser.add_argument("--se_batch_size", type=int,
+                help="Batch size for embedding sentences in SentEval (default 16).", default=16)
+    parser.add_argument("--gpu", type=int, choices=[0,1],
+                help="Whether to use GPU (default 0).", default=0)
     parser.add_argument("--senteval_path", type=str,
-                help="Path to SentEval (default ./SentEval)", default="./SentEval")
-    parser.add_argument("--glove_path", type=str,
-                help="Path to GloVe embeddings file (glove.840B.300d.txt, default ./)", default="./")
+                help="Path to SentEval (default ./SentEval).", default="./SentEval")
+    parser.add_argument("--word_emb_file", type=str,
+                help="Path to word embeddings file (default ./glove.840B.300d.txt).", default="./glove.840B.300d.txt")
+    parser.add_argument("--word_emb_dim", type=int,
+                help="Dimension of word embeddings (default 300).", default=300)
 
     #Network parameters
     parser.add_argument("--input_dim", type=int, default=300,
@@ -107,63 +111,61 @@ if __name__ == '__main__':
     parser.add_argument("--output_dim", type=int, default=4096,
                 help="Output feature dimensionality (default 4096).")
     parser.add_argument("--max_seq_len", type=int, default=96,
-                help="Sequence length (default 96)")
+                help="Sequence length (default 96).")
     parser.add_argument("--bidirectional", type=int, choices=[0,1], default=1,
                 help="Whether to be bidirectional (default 1).")
     parser.add_argument("--init", type=str, choices=["none", "orthogonal", "sparse", "normal",
                                                      "uniform", "kaiming", "xavier"],
-                help="Type of initialization to use.", default="none")
+                help="Type of initialization to use (either none, orthogonal, sparse, normal, uniform, kaiming, "
+                     "or xavier, default none).", default="none")
     parser.add_argument("--activation", type=str,
-                        help="Activation function to apply to features prior to SentEval.", default=None)
+                        help="Activation function to apply to features (default none).", default=None)
     parser.add_argument("--pooling", choices=["min", "max", "mean", "hier", "sum"],
-                help="Type of pooling (default max).", default="max")
-
+                help="Type of pooling (either min, max, mean, hier, or sum, default max).", default="max")
 
     #Embedding parameters
-    parser.add_argument("--zero", type=int,
-                help="Whether to initialize word embeddings to zero.", default=1)
-    parser.add_argument("--embedding", type=str, choices=["glove"],
-                help="Word embeddings to load (default glove)", default="glove")
+    parser.add_argument("--zero", type=int, choices=[0,1],
+                help="Whether to initialize word embeddings to zero (default 1).", default=1)
     parser.add_argument("--pos_enc", type=int, choices=[0,1], default=0,
                 help="Whether to do positional encoding (default 0).")
-    parser.add_argument("--pos_enc_concat", type=int,
-                        help="Whether to concat positional encoding to regular embedding.", default=0)
-    parser.add_argument("--random_word_embeddings", type=int,
-                help="Whether to not load pretrained embeddings", choices=[0,1], default=0)
+    parser.add_argument("--pos_enc_concat", type=int, choices=[0,1],
+                        help="Whether to concat positional encoding to regular embedding (default 0).", default=0)
+    parser.add_argument("--random_word_embeddings", type=int, choices=[0,1],
+                help="Whether to load pretrained embeddings (default 0).", default=0)
 
     #Projection parameters
-    parser.add_argument("--projection", type=str, choices=["none", "unique", "same"],
-                help="Type of projection (default unique)", default="unique")
+    parser.add_argument("--projection", type=str, choices=["none", "same"],
+                help="Type of projection (either none or same, default same).", default="same")
 
     #ESN parameters
     parser.add_argument("--spectral_radius", type=float,
-                help="Spectral radius for ESN.", default=1.)
+                help="Spectral radius for ESN (default 1.).", default=1.)
     parser.add_argument("--leaky", type=float,
-                help="How much of previous state to leak for ESN.", default=0)
-    parser.add_argument("--concat_inp", type=int,
-                help="Whether to concatenate input to hidden state for ESN.", default=0)
+                help="Fraction of previous state to leak for ESN (default 0).", default=0)
+    parser.add_argument("--concat_inp", type=int, choices=[0,1],
+                help="Whether to concatenate input to hidden state for ESN (default 0).", default=0)
     parser.add_argument("--stdv", type=float,
-                help="Width of uniform interval to sample weights for ESN.", default=-1.)
+                help="Width of uniform interval to sample weights for ESN (default 1).", default=1.)
     parser.add_argument("--sparsity", type=float,
-                help="How sparse to make recurrent weights for ESN.", default=0)
+                help="Sparsity of recurrent weights for ESN (default 0).", default=0)
 
     #LSTM parameters
     parser.add_argument("--num_layers", type=int,
-                        help="Number of layers for random LSTM.", default=1)
+                        help="Number of layers for random LSTM (default 1).", default=1)
 
     print(" ".join(sys.argv))
     params, remaining_args = parser.parse_known_args()
     assert remaining_args == []
 
-    if params.pos_enc_concat:
-        params.input_dim *= 2
-    if params.concat_inp:
-        senteval_feat_dim += params.input_dim
-
     senteval_feat_dim = params.output_dim if not params.bidirectional else 2*params.output_dim
     params.activation = eval(params.activation)() if \
             (params.activation is not None and eval(params.activation) is not None) \
             else None
+
+    if params.pos_enc_concat:
+        params.input_dim *= 2
+    if params.concat_inp:
+        senteval_feat_dim += params.input_dim
 
     sys.path.insert(0, params.senteval_path)
     import senteval
@@ -176,6 +178,7 @@ if __name__ == '__main__':
         torch.cuda.empty_cache()
 
     for task, result in total_results.items():
-        dev = [float(i[0]) for i in result]
-        test = [float(i[1]) for i in result]
-        print("final-"+task, np.mean(dev), np.mean(test), np.std(dev), np.std(test))
+        dev = [i[0] for i in result]
+        test = [i[1] for i in result]
+        print("{0} | {1:0.2f} {2:0.2f} | {3:0.2f} {4:0.2f}".format(task, np.mean(dev), np.std(dev),
+                                                              np.mean(test), np.std(test)))

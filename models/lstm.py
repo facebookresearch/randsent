@@ -7,11 +7,8 @@
 
 import torch
 import torch.nn as nn
-from torch.autograd import Variable
 from torch.nn.utils.rnn import pad_packed_sequence as unpack
 from torch.nn.utils.rnn import pack_padded_sequence as pack
-
-import numpy as np
 
 from . import model_utils
 
@@ -21,12 +18,11 @@ class RandLSTM(nn.Module):
         super(RandLSTM, self).__init__()
         self.params = params
 
-        self.position_enc = torch.nn.Embedding(1000, 300, padding_idx=0)
-        self.position_enc.weight.data = model_utils.position_encoding_init(1000, 300)
         self.bidirectional = params.bidirectional
+        self.max_seq_len = params.max_seq_len
 
-        self.e_hid_init = Variable(torch.zeros(1, 1, params.output_dim))
-        self.e_cell_init = Variable(torch.zeros(1, 1, params.output_dim))
+        self.e_hid_init = torch.zeros(1, 1, params.output_dim)
+        self.e_cell_init = torch.zeros(1, 1, params.output_dim)
 
         self.output_dim = params.output_dim
         self.num_layers = params.num_layers
@@ -43,7 +39,7 @@ class RandLSTM(nn.Module):
             self.e_cell_init = self.e_cell_init.cuda()
             self.cuda()
 
-    def encode_batch(self, inputs, lengths):
+    def lstm(self, inputs, lengths):
         bsz, max_len, _ = inputs.size()
         in_embs = inputs
         lens, indices = torch.sort(lengths, 0, True)
@@ -57,61 +53,17 @@ class RandLSTM(nn.Module):
 
         return all_hids
 
-    def forward(self, batch, params):
-        self.params.lut = params.lut
-        self.params.word2id = params.word2id
-        input_seq = torch.LongTensor(1000, len(batch)).zero_()
-        word_pos = torch.LongTensor(1000, len(batch)).zero_()
+    def forward(self, batch, se_params):
+        lengths, out, _ = model_utils.embed(batch, self.params, se_params)
+        out = out.transpose(1, 0)
 
-        cur_max_seq_len = 0
-        for i, l in enumerate(batch):
-            j = 0
-            for k, w in enumerate(l):
-                input_seq[j][i] = self.params.word2id[w]
-                word_pos[j][i] = (k+1)
-                j += 1
-            if j > cur_max_seq_len: cur_max_seq_len = j
-        input_seq = input_seq[:cur_max_seq_len]
-        out = self.params.lut(Variable(input_seq))
-        if self.params.gpu:
-            out = out.cuda()
-
-        word_pos = word_pos[:cur_max_seq_len]
-        word_pos = word_pos
-        if self.params.gpu:
-            word_pos = word_pos.cuda()
-        word_pos = self.position_enc(word_pos)
-
-        lengths = [len(i) for i in batch]
-        lengths = Variable(torch.from_numpy(np.array(lengths)))
-
-        out = out.transpose(1,0)
-        word_pos = word_pos.transpose(1,0)
-        if self.params.pos_enc and self.params.pos_enc_concat:
-            out = torch.cat([out, word_pos], dim=2)
-        elif self.params.pos_enc:
-            out += word_pos
-
-        out = self.encode_batch(out, lengths)
+        out = self.lstm(out, lengths)
         out = out.transpose(1,0)
 
-        # all functions below are SxBxFeatDim -> BxOutDim
-        if self.params.pooling == "mean":
-            out = model_utils.mean_pool(out, lengths)
-        elif self.params.pooling == "max":
-            out = model_utils.max_pool(out, lengths)
-        elif self.params.pooling == "min":
-            out = model_utils.min_pool(out, lengths)
-        elif self.params.pooling == "hier":
-            out = model_utils.hier_pool(out, lengths)
-        elif self.params.pooling == "sum":
-            out = model_utils.sum_pool(out, lengths)
-        else:
-            print("Warning: no pooling operation specified!")
+        out = model_utils.pool(out, lengths, self.params)
 
         if self.params.activation is not None:
-            if eval(self.params.activation) is not None:
-                out = eval(self.params.activation)()(out)
+            out = self.params.activation(out)
 
         return out
 

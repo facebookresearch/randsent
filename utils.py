@@ -5,25 +5,18 @@
 # LICENSE file in the root directory of this source tree.
 #
 
-import os
-
-import numpy as np
-
 import torch
 import torch.nn as nn
 
-def load_vecs(glove_path, word2id, zero=True):
-    glove_path = os.path.join(glove_path, 'glove.840B.300d.txt')
-    emb_dim = 300
-
-    embs = nn.Embedding(len(word2id), emb_dim, padding_idx=word2id['<p>'])
+def load_vecs(params, word2id, zero=True):
+    embs = nn.Embedding(len(word2id), params.word_emb_dim, padding_idx=word2id['<p>'])
     if zero:
         nn.init.constant_(embs.weight, 0.)
 
     matches = 0
     n_words = len(word2id)
     embedding_vocab = []
-    with open(glove_path) as f:
+    with open(params.word_emb_file) as f:
         for line in f:
             word = line.split(' ', 1)[0]
             embedding_vocab.append(word)
@@ -42,7 +35,7 @@ def load_vecs(glove_path, word2id, zero=True):
                 if new_word in embedding_vocab:
                     word_map[new_word] = word2id[word]
 
-    with open(glove_path) as f:
+    with open(params.word_emb_file) as f:
         for line in f:
             word = line.split(' ', 1)[0]
             if word != '<p>':
@@ -51,8 +44,7 @@ def load_vecs(glove_path, word2id, zero=True):
                     embs.weight.data[word_map[word]][:300].copy_(torch.FloatTensor(glove_vect))
 
                     matches += 1
-                    if matches == n_words: break # done
-
+                    if matches == n_words: break
     return embs
 
 def init_word_embeds(emb, opts):
