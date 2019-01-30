@@ -1,6 +1,6 @@
 # RandSent
 
-Various methods for random sentence representations, from the paper [No Training Required: Exploring Random Encoders for Sentence Classification](https://openreview.net/forum?id=BkgPajAcY7).
+Various methods for random sentence representations, from the paper [No Training Required: Exploring Random Encoders for Sentence Classification](https://arxiv.org/pdf/1901.10444.pdf).
 
 ## Getting started
 
