@@ -31,6 +31,9 @@ def prepare(params, samples):
 
 def batcher(params, batch):
     network = params['network']
+    for n,i in enumerate(batch):
+        if len(i) == 0:
+            batch[n] = ['<p>']
     with torch.no_grad():
         vec = network.encode(batch, params)
     return vec
