@@ -131,7 +131,7 @@ def embed(batch, params, se_params, position_enc=None, to_reverse=0):
             word_pos = word_pos.cuda()
         out += position_enc(word_pos)
 
-    lengths = [len(i) for i in batch]
+    lengths = [len(i) if len(i) < params.max_seq_len else params.max_seq_len for i in batch]
     lengths = torch.from_numpy(np.array(lengths))
 
     return lengths, out, word_pos

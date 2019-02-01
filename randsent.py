@@ -98,7 +98,7 @@ if __name__ == '__main__':
     parser.add_argument("--n_folds", type=int,
                 help="Number of folds for cross-validation in SentEval (default 10).", default=10)
     parser.add_argument("--se_batch_size", type=int,
-                help="Batch size for embedding sentences in SentEval (default 16).", default=16)
+                help="Batch size for embedding sentences in SentEval (default 16).", default=8)
     parser.add_argument("--gpu", type=int, choices=[0,1],
                 help="Whether to use GPU (default 0).", default=0)
     parser.add_argument("--senteval_path", type=str,
