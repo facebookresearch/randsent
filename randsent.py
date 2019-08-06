@@ -57,7 +57,7 @@ def get_results(params, seed):
         'word_emb_file': params.word_emb_file, 'word_emb_dim': params.word_emb_dim,
         'usepytorch': True, 'kfold': params.n_folds, 'feat_dim': senteval_feat_dim,
         'random_word_embeddings': params.random_word_embeddings, 'seed': seed,
-        'batch_size': params.se_batch_size, 'network': network
+        'batch_size': params.se_batch_size, 'network': network, 'zero': params.zero
     }, batcher, prepare)
 
     if params.task_type == "downstream":
