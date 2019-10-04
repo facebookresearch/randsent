@@ -98,7 +98,7 @@ if __name__ == '__main__':
     parser.add_argument("--n_folds", type=int,
                 help="Number of folds for cross-validation in SentEval (default 10).", default=10)
     parser.add_argument("--se_batch_size", type=int,
-                help="Batch size for embedding sentences in SentEval (default 16).", default=8)
+                help="Batch size for embedding sentences in SentEval (default 8).", default=8)
     parser.add_argument("--gpu", type=int, choices=[0,1],
                 help="Whether to use GPU (default 0).", default=0)
     parser.add_argument("--senteval_path", type=str,
@@ -110,7 +110,7 @@ if __name__ == '__main__':
 
     #Network parameters
     parser.add_argument("--input_dim", type=int, default=300,
-                help="Output feature dimensionality (default 300).")
+                help="Input feature dimensionality (default 300).")
     parser.add_argument("--output_dim", type=int, default=4096,
                 help="Output feature dimensionality (default 4096).")
     parser.add_argument("--max_seq_len", type=int, default=96,
@@ -122,7 +122,7 @@ if __name__ == '__main__':
                 help="Type of initialization to use (either none, orthogonal, sparse, normal, uniform, kaiming, "
                      "or xavier, default none).", default="none")
     parser.add_argument("--activation", type=str,
-                        help="Activation function to apply to features (default none).", default=None)
+                        help="Activation function to apply to features (default None).", default=None)
     parser.add_argument("--pooling", choices=["min", "max", "mean", "hier", "sum"],
                 help="Type of pooling (either min, max, mean, hier, or sum, default max).", default="max")
 
