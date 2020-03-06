@@ -14,7 +14,7 @@ In the paper, we use GloVe embeddings (but nothing stops you from running RandSe
 
 `wget http://nlp.stanford.edu/data/glove.840B.300d.zip`
 
-Place `glove.840B.300d.txt` in the current directory, or provide the path using `--word_emb_path`.
+Place `glove.840B.300d.txt` in the current directory, or provide the path using `--word_emb_file`.
 
 ## Requirements
 
